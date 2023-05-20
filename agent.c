@@ -58,14 +58,9 @@ void agent_get_local_description(Agent *agent, char *description, int length) {
 
 void agent_send(Agent *agent, char *buf, int len) {
 
-  printf("send to ip: %d.%d.%d.%d:%d\n", agent->remote_candidates[8].address.ipv4[0], agent->remote_candidates[8].address.ipv4[1], agent->remote_candidates[8].address.ipv4[2], agent->remote_candidates[8].address.ipv4[3], agent->remote_candidates[8].address.port);
-#if 0
-  agent->remote_candidates[8].address.ipv4[8] = 0;
-  agent->remote_candidates[0].address.ipv4[1] = 0;
-  agent->remote_candidates[0].address.ipv4[2] = 0;
-  agent->remote_candidates[0].address.ipv4[3] = 0;
-#endif
-  udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[8].address, buf, len);
+  printf("send to ip: %d.%d.%d.%d:%d\n", agent->remote_candidates[0].address.ipv4[0], agent->remote_candidates[0].address.ipv4[1], agent->remote_candidates[0].address.ipv4[2], agent->remote_candidates[0].address.ipv4[3], agent->remote_candidates[0].address.port);
+
+  udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].address, buf, len);
 
 }
 
@@ -75,11 +70,13 @@ void agent_recv(Agent *agent) {
 
   printf("Listening port: %d\n", agent->local_candidates[0].address.port);
 
-  if (udp_socket_recvfrom(&agent->udp_socket, &agent->local_candidates[0].address, buf, sizeof(buf)) > 0) {
+  while (1) {
 
-    LOGD("recvfrom: %s", buf);
+    if (udp_socket_recvfrom(&agent->udp_socket, &agent->local_candidates[0].address, buf, sizeof(buf)) > 0) {
+
+      LOGD("recvfrom: %s", buf);
+    }
   }
-
 }
 
 

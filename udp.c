@@ -7,7 +7,6 @@
 #include "utils.h"
 #include "udp.h"
 
-
 int udp_socket_open(UdpSocket *udp_socket, Address *addr) {
 
   udp_socket->fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -29,6 +28,10 @@ int udp_socket_open(UdpSocket *udp_socket, Address *addr) {
     return -1;
   }
 
+  udp_socket->bind_addr.family = addr->family;
+  udp_socket->bind_addr.port = addr->port;
+  memcpy(udp_socket->bind_addr.ipv4, addr->ipv4, 4);
+  LOGD("bind_addr: %p", &udp_socket->bind_addr);
   return 0;
 }
 
@@ -84,6 +87,7 @@ int udp_socket_sendto(UdpSocket *udp_socket, Address *addr, const char *buf, int
 
   sin.sin_port = htons(addr->port);
 
+  LOGD("sendto addr %d.%d.%d.%d (%d)", addr->ipv4[0], addr->ipv4[1], addr->ipv4[2], addr->ipv4[3], addr->port);
   int ret = sendto(udp_socket->fd, buf, len, 0, (struct sockaddr *)&sin, sizeof(sin));
 
   if (ret < 0) {
@@ -91,7 +95,7 @@ int udp_socket_sendto(UdpSocket *udp_socket, Address *addr, const char *buf, int
     return -1;
   }
 
-  return 0;
+  return ret;
 }
 
 int udp_socket_recvfrom(UdpSocket *udp_socket, Address *addr, char *buf, int len) {
@@ -100,14 +104,6 @@ int udp_socket_recvfrom(UdpSocket *udp_socket, Address *addr, char *buf, int len
 
     LOGE("recvfrom before socket init");
     return -1; 
-  }
-
-
-  if (udp_socket->fd < 0) {
-
-    LOGE("socket() failed");
-
-    return -1;
   }
 
   struct sockaddr_in sin;
@@ -121,6 +117,7 @@ int udp_socket_recvfrom(UdpSocket *udp_socket, Address *addr, char *buf, int len
   sin.sin_port = htons(addr->port);
   sin.sin_addr.s_addr = htonl(INADDR_ANY);
 
+  LOGD("recvfrom addr %d.%d.%d.%d (%d)", addr->ipv4[0], addr->ipv4[1], addr->ipv4[2], addr->ipv4[3], addr->port);
   int ret = recvfrom(udp_socket->fd, buf, len, 0, (struct sockaddr *)&sin, &sin_len);
   if (ret < 0) {
 

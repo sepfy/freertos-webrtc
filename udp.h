@@ -8,6 +8,7 @@ typedef struct UdpSocket UdpSocket;
 struct UdpSocket {
 
   int fd;
+  Address bind_addr;
 };
 
 int udp_socket_open(UdpSocket *udp_socket, Address *addr);
