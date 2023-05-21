@@ -22,7 +22,7 @@ int udp_socket_open(UdpSocket *udp_socket, Address *addr) {
   sin.sin_port = htons(addr->port);
   sin.sin_addr.s_addr = htonl(INADDR_ANY);
 
-  if (bind(udp_socket->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+  if (bind(udp_socket->fd, (struct sockaddr *)&sin, sin_len) < 0) {
 
     LOGE("Failed to bind socket");
     return -1;

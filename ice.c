@@ -46,7 +46,7 @@ void ice_candidate_to_description(IceCandidate *candidate, char *description, in
       break;
   }
 
-  snprintf(description, length, "a=candidate:%d %d %s %d %d.%d.%d.%d %d typ %s",
+  snprintf(description, length, "a=candidate:%d %d %s %ld %d.%d.%d.%d %d typ %s",
    candidate->foundation,
    candidate->component,
    candidate->transport,
@@ -63,7 +63,7 @@ int ice_candidate_from_description(IceCandidate *candidate, char *description) {
 
   char type[16];
 
-  if (sscanf(description, "a=candidate:%d %d %s %d %hhu.%hhu.%hhu.%hhu %hd typ %s",
+  if (sscanf(description, "a=candidate:%d %d %s %ld %hhu.%hhu.%hhu.%hhu %hd typ %s",
    &candidate->foundation,
    &candidate->component,
    candidate->transport,

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "mbedtls/ssl.h"
 #include "dtls_srtp.h"
 #include "address.h"
 #include "udp.h"
@@ -14,7 +15,7 @@ int dtls_srtp_udp_send(void *ctx, const unsigned char *buf, size_t len) {
 
   DtlsSrtp *dtls_srtp = (DtlsSrtp *) ctx;
 
-  int ret = udp_socket_sendto(dtls_srtp->udp_socket, dtls_srtp->remote_addr, buf, len);
+  int ret = udp_socket_sendto(dtls_srtp->udp_socket, dtls_srtp->remote_addr, (char*)buf, len);
 
   LOGD("dtls_srtp_udp_send (%d)", ret);
 
@@ -25,7 +26,7 @@ int dtls_srtp_udp_recv(void *ctx, unsigned char *buf, size_t len) {
 
   DtlsSrtp *dtls_srtp = (DtlsSrtp *) ctx;
 
-  int ret = udp_socket_recvfrom(dtls_srtp->udp_socket, &dtls_srtp->udp_socket->bind_addr, buf, len);
+  int ret = udp_socket_recvfrom(dtls_srtp->udp_socket, &dtls_srtp->udp_socket->bind_addr, (char*)buf, len);
 
   LOGD("dtls_srtp_udp_recv (%d)", ret);
 
@@ -194,8 +195,6 @@ static int dtls_srtp_handshake_server(DtlsSrtp *dtls_srtp) {
   while (1) {
 
     unsigned char client_ip[] = "test";
-
-    size_t cliip_len;
 
     mbedtls_ssl_session_reset(&dtls_srtp->ssl);
 
