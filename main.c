@@ -115,7 +115,7 @@ void test_dtls(int argc, char *argv[]) {
 
     snprintf(buf, sizeof(buf), "hello from client");
 
-    printf("client: sending %s\n", buf);
+    printf("client sending: %s\n", buf);
 
     usleep(100 * 1000);
 
@@ -123,17 +123,17 @@ void test_dtls(int argc, char *argv[]) {
 
     dtls_srtp_read(&dtls_srtp, buf, sizeof(buf));
 
-    printf("client: received %s\n", buf);
+    printf("client received: %s\n", buf);
 
   } else {
 
     dtls_srtp_read(&dtls_srtp, buf, sizeof(buf));
 
-    printf("server: received %s\n", buf);
+    printf("server received: %s\n", buf);
 
     snprintf(buf, sizeof(buf), "hello from server");
 
-    printf("server: sending %s\n", buf);
+    printf("server sending: %s\n", buf);
 
     usleep(100 * 1000);
 

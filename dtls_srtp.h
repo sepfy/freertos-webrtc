@@ -1,16 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "mbedtls/pk.h"
-#include "mbedtls/x509_crt.h"
-#include "mbedtls/ssl_cookie.h"
-#include "mbedtls/x509_csr.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/ssl_cookie.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/x509_csr.h"
+#include "mbedtls/timing.h"
 
 #include "udp.h"
 #include "address.h"
+
+#define DTLS_SRTP_FINGERPRINT_SIZE 160
 
 typedef enum DtlsSrtpRole {
 
@@ -38,6 +41,9 @@ typedef struct DtlsSrtp {
   Address *remote_addr;
 
   DtlsSrtpRole role;
+
+  char local_fingerprint[DTLS_SRTP_FINGERPRINT_SIZE];
+  char remote_fingerprint[DTLS_SRTP_FINGERPRINT_SIZE];
 
 } DtlsSrtp;
 
