@@ -12,7 +12,6 @@
 typedef enum IceCandidateType {
 
   ICE_CANDIDATE_TYPE_HOST,
-
   ICE_CANDIDATE_TYPE_SRFLX,
 
 } IceCandidateType;
@@ -21,19 +20,19 @@ typedef struct IceCandidate IceCandidate;
 
 struct IceCandidate {
    
-  IceCandidateType type;
-   
-  uint32_t priority;
-   
+  int foundation;
+
   int component;
 
-  int foundation;
-    
+  uint32_t priority;
+ 
   char transport[32 + 1];
 
-  uint16_t port;
+  IceCandidateType type;
 
-  Address address;
+  Address addr;
+
+  Address raddr;
 };
 
 void ice_candidate_create(IceCandidate *ice_candidate, IceCandidateType type, Address *addr);

@@ -2,77 +2,101 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #include "udp.h"
 #include "utils.h"
 #include "ice.h"
 
-void ice_candidate_create(IceCandidate *candidate, IceCandidateType type, Address *addr) {
+static void ice_candidate_calculate_priority(IceCandidate *candidate) {
 
-  memcpy(&candidate->address, addr, sizeof(Address));
-
-  candidate->port = addr->port; 
-
-  candidate->type = type;
-
-  candidate->foundation = 1;
-
-  candidate->priority = 1;
-
-  candidate->component = 1;
-
-  snprintf(candidate->transport, sizeof(candidate->transport), "%s", "UDP");
-}
-
-void ice_candidate_to_description(IceCandidate *candidate, char *description, int length) {
-
-  char type_text[16];
-
-  memset(description, 0, length);
-
-  memset(type_text, 0, sizeof(type_text));
+  // priority = (2^24)*(type preference) + (2^8)*(local preference) + (256 - component ID)
 
   switch (candidate->type) {
 
     case ICE_CANDIDATE_TYPE_HOST:
-      snprintf(type_text, sizeof(type_text), "host");
+      candidate->priority = 2130706432 + 16777215 + (256 - candidate->component);
       break;
 
     case ICE_CANDIDATE_TYPE_SRFLX:
-      snprintf(type_text, sizeof(type_text), "srflx");
+      candidate->priority = 1694498815 + 16777215 + (256 - candidate->component);
       break;
 
     default:
       break;
   }
 
-  snprintf(description, length, "a=candidate:%d %d %s %ld %d.%d.%d.%d %d typ %s",
+}
+
+void ice_candidate_create(IceCandidate *candidate, IceCandidateType type, Address *addr) {
+
+  memcpy(&candidate->addr, addr, sizeof(Address));
+
+  candidate->type = type;
+
+  candidate->foundation = 1;
+  // 1: RTP, 2: RTCP
+  candidate->component = 1;
+
+  ice_candidate_calculate_priority(candidate);
+
+  snprintf(candidate->transport, sizeof(candidate->transport), "%s", "UDP");
+}
+
+void ice_candidate_to_description(IceCandidate *candidate, char *description, int length) {
+
+  char typ_raddr[64];
+
+  memset(description, 0, length);
+
+  memset(typ_raddr, 0, sizeof(typ_raddr));
+
+  switch (candidate->type) {
+
+    case ICE_CANDIDATE_TYPE_HOST:
+      snprintf(typ_raddr, sizeof(typ_raddr), "host");
+      break;
+
+    case ICE_CANDIDATE_TYPE_SRFLX:
+      snprintf(typ_raddr, sizeof(typ_raddr), "srflx raddr %d.%d.%d.%d rport %d",
+       candidate->raddr.ipv4[0],
+       candidate->raddr.ipv4[1],
+       candidate->raddr.ipv4[2],
+       candidate->raddr.ipv4[3],
+       candidate->raddr.port);
+      break;
+
+    default:
+      break;
+  }
+
+  snprintf(description, length, "a=candidate:%d %d %s %" PRIu32 " %d.%d.%d.%d %d typ %s\r\n",
    candidate->foundation,
    candidate->component,
    candidate->transport,
    candidate->priority,
-   candidate->address.ipv4[0],
-   candidate->address.ipv4[1],
-   candidate->address.ipv4[2],
-   candidate->address.ipv4[3],
-   candidate->port,
-   type_text);
+   candidate->addr.ipv4[0],
+   candidate->addr.ipv4[1],
+   candidate->addr.ipv4[2],
+   candidate->addr.ipv4[3],
+   candidate->addr.port,
+   typ_raddr);
 }
 
 int ice_candidate_from_description(IceCandidate *candidate, char *description) {
 
   char type[16];
 
-  if (sscanf(description, "a=candidate:%d %d %s %ld %hhu.%hhu.%hhu.%hhu %hd typ %s",
+  if (sscanf(description, "a=candidate:%d %d %s %" SCNu32 " %hhu.%hhu.%hhu.%hhu %hd typ %s",
    &candidate->foundation,
    &candidate->component,
    candidate->transport,
    &candidate->priority,
-   &candidate->address.ipv4[0],
-   &candidate->address.ipv4[1],
-   &candidate->address.ipv4[2],
-   &candidate->address.ipv4[3],
-   &candidate->address.port,
+   &candidate->addr.ipv4[0],
+   &candidate->addr.ipv4[1],
+   &candidate->addr.ipv4[2],
+   &candidate->addr.ipv4[3],
+   &candidate->addr.port,
    type) != 10) {
 
     LOGE("Failed to parse candidate description: %s", description);

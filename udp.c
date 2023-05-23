@@ -4,12 +4,21 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+
 #include "utils.h"
 #include "udp.h"
 
-int udp_socket_open(UdpSocket *udp_socket, Address *addr) {
+int udp_socket_open(UdpSocket *udp_socket) {
 
   udp_socket->fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+}
+
+int udp_socket_bind(UdpSocket *udp_socket, Address *addr) {
 
   if (udp_socket->fd < 0) {
     LOGE("Failed to create socket");
@@ -128,4 +137,50 @@ int udp_socket_recvfrom(UdpSocket *udp_socket, Address *addr, char *buf, int len
   return ret;
   
 }
+
+int udp_socket_get_host_address(UdpSocket *udp_socket, Address *addr) {
+
+  int ret = 0;
+
+  struct ifaddrs *addrs,*tmp;
+
+  struct ifreq ifr;
+
+  if (udp_socket->fd < 0) {
+
+    LOGE("get_host_address before socket init");
+    return -1;
+  }
+
+
+  getifaddrs(&addrs);
+
+  tmp = addrs;
+
+  while (tmp) {
+
+    if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET) {
+
+      strncpy(ifr.ifr_name, tmp->ifa_name, IFNAMSIZ); 
+
+      if (strstr(ifr.ifr_name, "lo") == 0 && ioctl(udp_socket->fd, SIOCGIFADDR, &ifr) == 0) {
+
+        LOGD("interface: %s, address: %s", ifr.ifr_name, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
+
+        addr[ret].family = AF_INET;
+        memcpy(addr[ret].ipv4, &((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr, 4);
+        ret++;
+      }
+
+
+    }
+
+    tmp = tmp->ifa_next;
+  }
+
+  freeifaddrs(addrs);
+  return ret;
+}
+
+
 

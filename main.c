@@ -80,15 +80,15 @@ void test_dtls(int argc, char *argv[]) {
     return;
   }
 
-  local_addr.ipv4[0] = 127;
-  local_addr.ipv4[1] = 0;
-  local_addr.ipv4[2] = 0;
-  local_addr.ipv4[3] = 1;
+  local_addr.ipv4[0] = 192;
+  local_addr.ipv4[1] = 168;
+  local_addr.ipv4[2] = 1;
+  local_addr.ipv4[3] = 110;
 
-  remote_addr.ipv4[0] = 127;
-  remote_addr.ipv4[1] = 0;
-  remote_addr.ipv4[2] = 0;
-  remote_addr.ipv4[3] = 1;
+  remote_addr.ipv4[0] = 192;
+  remote_addr.ipv4[1] = 168;
+  remote_addr.ipv4[2] = 1;
+  remote_addr.ipv4[3] = 108;
 
   if (strstr(argv[1], "client")) {
 
@@ -103,7 +103,9 @@ void test_dtls(int argc, char *argv[]) {
     dtls_srtp_init(&dtls_srtp, &udp_socket, DTLS_SRTP_ROLE_SERVER);
   }
 
-  udp_socket_open(&udp_socket, &local_addr);
+  udp_socket_open(&udp_socket);
+
+  udp_socket_bind(&udp_socket, &local_addr);
 
   dtls_srtp_handshake(&dtls_srtp, &remote_addr);
 
@@ -190,8 +192,8 @@ void test_local() {
 
 int main(int argc, char *argv[]) {
 
-  test_dtls(argc, argv);
-  //test_sdp(argc, argv);
+  //test_dtls(argc, argv);
+  test_sdp(argc, argv);
   //test_local();
   return 0;
 }
