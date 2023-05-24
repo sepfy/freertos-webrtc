@@ -88,7 +88,7 @@ void test_dtls(int argc, char *argv[]) {
   remote_addr.ipv4[0] = 192;
   remote_addr.ipv4[1] = 168;
   remote_addr.ipv4[2] = 1;
-  remote_addr.ipv4[3] = 108;
+  remote_addr.ipv4[3] = 110;
 
   if (strstr(argv[1], "client")) {
 
@@ -192,8 +192,8 @@ void test_local() {
 
 int main(int argc, char *argv[]) {
 
-  //test_dtls(argc, argv);
-  test_sdp(argc, argv);
+  test_dtls(argc, argv);
+  //test_sdp(argc, argv);
   //test_local();
   return 0;
 }

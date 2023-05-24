@@ -31,7 +31,6 @@ int dtls_srtp_udp_recv(void *ctx, unsigned char *buf, size_t len) {
   LOGD("dtls_srtp_udp_recv (%d)", ret);
 
   return ret;
-
 }
 
 // Do not verify CA
@@ -85,7 +84,6 @@ static int dtls_srtp_selfsign_cert(DtlsSrtp *dtls_srtp) {
 
   mbedtls_x509_crt_parse(&dtls_srtp->cert, cert_buf, CERT_BUF_SIZE);
 
-
   mbedtls_x509write_crt_free(&crt);
 
   return 0;
@@ -93,6 +91,14 @@ static int dtls_srtp_selfsign_cert(DtlsSrtp *dtls_srtp) {
 }
 
 int dtls_srtp_init(DtlsSrtp *dtls_srtp, UdpSocket *udp_socket, DtlsSrtpRole role) {
+
+  static const mbedtls_ssl_srtp_profile default_profiles[] = {
+   MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80,
+   MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_32,
+   MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_80,
+   MBEDTLS_TLS_SRTP_NULL_HMAC_SHA1_32,
+   MBEDTLS_TLS_SRTP_UNSET
+  };
 
   dtls_srtp->role = role;
   dtls_srtp->udp_socket = udp_socket;
@@ -140,10 +146,18 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, UdpSocket *udp_socket, DtlsSrtpRole role
      MBEDTLS_SSL_IS_CLIENT,
      MBEDTLS_SSL_TRANSPORT_DATAGRAM,
      MBEDTLS_SSL_PRESET_DEFAULT);
-
   }
 
+  mbedtls_ssl_conf_dtls_srtp_protection_profiles(&dtls_srtp->conf, default_profiles);
+
+  mbedtls_ssl_conf_srtp_mki_value_supported(&dtls_srtp->conf, MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED);
+
   mbedtls_ssl_setup(&dtls_srtp->ssl, &dtls_srtp->conf);
+
+  if(srtp_init() != srtp_err_status_ok) {
+
+    LOGE("libsrtp init failed");
+  }
 
   return 0;
 }
@@ -169,6 +183,99 @@ static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf) {
   *(--buf) = '\0';
 }
 
+static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type secret_type,
+ const unsigned char *secret, size_t secret_len,
+ const unsigned char client_random[32],
+ const unsigned char server_random[32],
+ mbedtls_tls_prf_types tls_prf_type) {
+
+  DtlsSrtp *dtls_srtp = (DtlsSrtp *) context;
+
+  int ret;
+
+  const char *dtls_srtp_label = "EXTRACTOR-dtls_srtp";
+
+  char randbytes[64];
+
+  uint8_t key_material[DTLS_SRTP_KEY_MATERIAL_LENGTH];
+
+  memcpy(randbytes, client_random, 32);
+  memcpy(randbytes + 32, server_random, 32);
+
+  // Export keying material
+  if ((ret = mbedtls_ssl_tls_prf(tls_prf_type, secret, secret_len, dtls_srtp_label,
+   randbytes, sizeof(randbytes), key_material, sizeof(key_material))) != 0) {
+    
+    LOGE("mbedtls_ssl_tls_prf failed(%d)", ret);
+    return;
+  }
+
+#if 0
+  int i, j;
+  printf("    DTLS-SRTP key material is:");
+  for (j = 0; j < sizeof(key_material); j++) {
+    if (j % 8 == 0) {
+      printf("\n    ");
+    }
+    printf("%02x ", key_material[j]);
+  }
+  printf("\n");
+
+  /* produce a less readable output used to perform automatic checks
+   * - compare client and server output
+   * - interop test with openssl which client produces this kind of output
+   */
+  printf("    Keying material: ");
+  for (j = 0; j < sizeof(key_material); j++) {
+    printf("%02X", key_material[j]);
+  }
+  printf("\n");
+#endif
+
+  // derive inbounds keys
+
+  memset(&dtls_srtp->remote_policy, 0, sizeof(dtls_srtp->remote_policy));
+
+  srtp_crypto_policy_set_rtp_default(&dtls_srtp->remote_policy.rtp); 
+  srtp_crypto_policy_set_rtcp_default(&dtls_srtp->remote_policy.rtcp);
+
+  memcpy(dtls_srtp->remote_policy_key, key_material, SRTP_MASTER_KEY_LENGTH);
+  memcpy(dtls_srtp->remote_policy_key + SRTP_MASTER_KEY_LENGTH, key_material + SRTP_MASTER_KEY_LENGTH + SRTP_MASTER_KEY_LENGTH, SRTP_MASTER_SALT_LENGTH);
+
+  dtls_srtp->remote_policy.ssrc.type = ssrc_any_inbound;
+  dtls_srtp->remote_policy.key = dtls_srtp->remote_policy_key;
+  dtls_srtp->remote_policy.next = NULL;
+
+  if (srtp_create(&dtls_srtp->srtp_in, &dtls_srtp->remote_policy) != srtp_err_status_ok) {
+
+    LOGD("Error creating inbound SRTP session for component");
+    return;
+  }
+
+  LOGI("Created inbound SRTP session");
+
+  // derive outbounds keys
+  memset(&dtls_srtp->local_policy, 0, sizeof(dtls_srtp->local_policy));
+
+  srtp_crypto_policy_set_rtp_default(&dtls_srtp->local_policy.rtp);
+  srtp_crypto_policy_set_rtcp_default(&dtls_srtp->local_policy.rtcp);
+
+  memcpy(dtls_srtp->local_policy_key, key_material + SRTP_MASTER_KEY_LENGTH, SRTP_MASTER_KEY_LENGTH);
+  memcpy(dtls_srtp->local_policy_key + SRTP_MASTER_KEY_LENGTH, key_material + SRTP_MASTER_KEY_LENGTH + SRTP_MASTER_KEY_LENGTH + SRTP_MASTER_SALT_LENGTH, SRTP_MASTER_SALT_LENGTH);
+
+  dtls_srtp->local_policy.ssrc.type = ssrc_any_outbound;
+  dtls_srtp->local_policy.key = dtls_srtp->local_policy_key;
+  dtls_srtp->local_policy.next = NULL;
+
+  if (srtp_create(&dtls_srtp->srtp_out, &dtls_srtp->local_policy) != srtp_err_status_ok) {
+
+    LOGE("Error creating outbound SRTP session");
+    return;
+  }
+
+  LOGI("Created outbound SRTP session");
+}
+
 static int dtls_srtp_do_handshake(DtlsSrtp *dtls_srtp) {
 
   int ret;
@@ -176,6 +283,8 @@ static int dtls_srtp_do_handshake(DtlsSrtp *dtls_srtp) {
   static mbedtls_timing_delay_context timer; 
 
   mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
+
+  mbedtls_ssl_set_export_keys_cb(&dtls_srtp->ssl, dtls_srtp_key_derivation, dtls_srtp);
 
   mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp_udp_send, dtls_srtp_udp_recv, NULL);
   
@@ -289,6 +398,9 @@ int dtls_srtp_handshake(DtlsSrtp *dtls_srtp, Address *addr) {
     LOGE("no remote fingerprint");
 
   }
+
+  mbedtls_dtls_srtp_info dtls_srtp_negotiation_result;
+  mbedtls_ssl_get_dtls_srtp_negotiation_result(&dtls_srtp->ssl, &dtls_srtp_negotiation_result);
 
   return ret;
 }
