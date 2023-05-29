@@ -29,8 +29,9 @@ void agent_gather_candidates(Agent *agent) {
 
   Address addr[AGENT_MAX_CANDIDATES];
 
-  udp_socket_open(&agent->udp_socket);
+  memset(agent->local_candidates, 0, sizeof(agent->local_candidates));
 
+  udp_socket_open(&agent->udp_socket);
 
   ret = udp_socket_get_host_address(&agent->udp_socket, addr);
 
@@ -52,21 +53,17 @@ void agent_get_local_description(Agent *agent, char *description, int length) {
 
   char buffer[1024];
 
-  char ufrag[ICE_UFRAG_LENGTH + 1];
-
   char upwd[ICE_UPWD_LENGTH + 1];
 
   memset(description, 0, length);
 
-  memset(ufrag, 0, sizeof(ufrag));
+  memset(agent->local_ufrag, 0, sizeof(agent->local_ufrag));
+  memset(agent->local_upwd, 0, sizeof(agent->local_upwd));
 
-  memset(upwd, 0, sizeof(upwd));
+  utils_random_string(agent->local_ufrag, ICE_UFRAG_LENGTH);
+  utils_random_string(agent->local_upwd, ICE_UPWD_LENGTH);
 
-  utils_random_string(ufrag, ICE_UFRAG_LENGTH);
-
-  utils_random_string(upwd, ICE_UPWD_LENGTH);
-
-  snprintf(description, length, "m=text 60083 ICE/SDP\na=ice-ufrag:%s\na=ice-pwd:%s\n", ufrag, upwd);
+  snprintf(description, length, "a=ice-ufrag:%s\na=ice-pwd:%s\n", agent->local_ufrag, agent->local_upwd);
 
   for (int i = 0; i < agent->local_candidates_count; i++) {
 
@@ -78,6 +75,9 @@ void agent_get_local_description(Agent *agent, char *description, int length) {
 
     strncat(description, buffer, length - strlen(description) - 1);
   }
+
+  // remove last \n
+  description[strlen(description) - 2] = '\0';
 
   udp_socket_bind(&agent->udp_socket, &agent->local_candidates[0].addr);
 }
@@ -93,14 +93,51 @@ void agent_send(Agent *agent, char *buf, int len) {
 void agent_recv(Agent *agent) {
 
   char buf[1024];
-
+  int ret;
   printf("Listening port: %d\n", agent->local_candidates[0].addr.port);
 
   while (1) {
 
-    if (udp_socket_recvfrom(&agent->udp_socket, &agent->local_candidates[0].addr, buf, sizeof(buf)) > 0) {
+    memset(buf, 0, sizeof(buf)); 
+    ret = udp_socket_recvfrom(&agent->udp_socket, &agent->local_candidates[0].addr, buf, sizeof(buf));
+    if (ret > 0) {
 
-      LOGD("recvfrom: %s", buf);
+      StunMsgType type = stun_is_stun_msg(buf, ret);
+
+      if (type == STUN_MSG_TYPE_BINDING_RESPONSE) {
+
+        LOGD("recv STUN_MSG_TYPE_BINDING_RESPONSE");
+
+        if (stun_response_is_valid(buf, ret, agent->remote_upwd) == 0) {
+
+          LOGD("recv STUN_MSG_TYPE_BINDING_RESPONSE is valid");
+LOGD("use_candidate: %d", agent->use_candidate);
+          if (agent->use_candidate) {
+            agent->selected_pair.local->state = ICE_CANDIDATE_STATE_SUCCEEDED;
+
+          } else {
+
+            LOGD("received STUN response, send STUN with USE-CANDIDATE");
+            agent->use_candidate = 1;
+            agent->selected_pair.local->state = ICE_CANDIDATE_STATE_INPROGRESS;
+LOGD("use_candidate: %d", agent->use_candidate);
+	  }
+          break;
+        }
+
+      } else if (type == STUN_MSG_TYPE_BINDING_REQUEST) {
+
+        if (stun_response_is_valid(buf, ret, agent->local_upwd) == 0) {
+
+          StunHeader *header = (StunHeader *)buf;
+          memcpy(agent->transaction_id, header->transaction_id, sizeof(header->transaction_id));
+          LOGD("recv STUN_MSG_TYPE_BINDING_REQUEST is valid");
+          agent->selected_pair.remote->state = ICE_CANDIDATE_STATE_INPROGRESS;
+          break;
+        }
+      } else {
+        LOGD("recvfrom: %s", buf);
+      }
     }
   }
 }
@@ -123,11 +160,11 @@ a=candidate:1 1 UDP 1 36.231.28.50 38143 typ srflx
 
     if (strncmp(line, "a=ice-ufrag:", strlen("a=ice-ufrag:")) == 0) {
 
-      agent->ice_ufrag = strdup(line + strlen("a=ice-ufrag:"));
+      memcpy(agent->remote_ufrag, line + strlen("a=ice-ufrag:"), ICE_UFRAG_LENGTH);
 
     } else if (strncmp(line, "a=ice-pwd:", strlen("a=ice-pwd:")) == 0) {
 
-      agent->ice_upwd = strdup(line + strlen("a=ice-pwd:"));
+      memcpy(agent->remote_upwd, line + strlen("a=ice-pwd:"), ICE_UPWD_LENGTH);
 
     } else if (strncmp(line, "a=candidate:", strlen("a=candidate:")) == 0) {
 
@@ -137,17 +174,111 @@ a=candidate:1 1 UDP 1 36.231.28.50 38143 typ srflx
     line = strtok(NULL, "\r\n");
   }
 
-  LOGD("ice_ufrag: %s", agent->ice_ufrag);
-  LOGD("ice_upwd: %s", agent->ice_upwd);
+  LOGD("remote ufrag: %s", agent->remote_ufrag);
+  LOGD("remote upwd: %s", agent->remote_upwd);
 
 }
 
-void *agent_thread(void *arg) {
+void agent_select_candidate_pair(Agent *agent) {
 
+  int i, j;
+
+  uint64_t priority = 0;
+
+  agent->selected_pair.local = &agent->local_candidates[0];
+
+  agent->selected_pair.remote = &agent->remote_candidates[0];
+
+  StunMessage msg;
+
+  StunHeader *header = (StunHeader *)msg.buf;
+
+  if (agent->selected_pair.local->state <= ICE_CANDIDATE_STATE_WAITING) {
+
+    LOGD("send to request to remote");
+    stun_create_binding_request(&msg);
+
+    char username[64];
+
+    snprintf(username, sizeof(username), "%s:%s", agent->remote_ufrag, agent->local_ufrag);
+
+    stun_msg_write_attr(&msg, STUN_ATTRIBUTE_USERNAME, strlen(username), username);
+
+    stun_msg_finish(&msg, agent->remote_upwd);
+
+    udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].addr, (char *)msg.buf, msg.size);
+
+  } else if (agent->selected_pair.local->state == ICE_CANDIDATE_STATE_INPROGRESS) {
+
+    LOGD("send to request to remote");
+    stun_create_binding_request(&msg);
+
+    char username[64];
+
+    snprintf(username, sizeof(username), "%s:%s", agent->remote_ufrag, agent->local_ufrag);
+
+    stun_msg_write_attr(&msg, STUN_ATTRIBUTE_USERNAME, strlen(username), username);
+
+    stun_msg_write_attr2(&msg, STUN_ATTR_TYPE_USE_CANDIDATE, 0, NULL);
+
+    stun_msg_finish(&msg, agent->remote_upwd);
+
+    udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].addr, (char *)msg.buf, msg.size);
+
+  } else if (agent->selected_pair.remote->state == ICE_CANDIDATE_STATE_INPROGRESS) {
+
+    stun_msg_create(&msg, STUN_MSG_TYPE_BINDING_RESPONSE);
+   
+    StunHeader *header = (StunHeader *)msg.buf;
+    memcpy(header->transaction_id, agent->transaction_id, sizeof(header->transaction_id));
+ 
+    char username[64];
+
+    snprintf(username, sizeof(username), "%s:%s", agent->local_ufrag, agent->remote_ufrag);
+
+    // TODO: XOR-MAPPED-ADDRESS
+    char mapped_address[8];
+    stun_set_mapped_address(mapped_address, NULL, &agent->selected_pair.remote->addr);
+
+    stun_msg_write_attr2(&msg, STUN_ATTR_TYPE_MAPPED_ADDRESS, 8, mapped_address);
+
+    stun_msg_write_attr(&msg, STUN_ATTRIBUTE_USERNAME, strlen(username), username);
+
+    stun_msg_finish(&msg, agent->local_upwd);
+
+    udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].addr, (char *)msg.buf, msg.size);
+
+    LOGD("send to response to remote");
+    agent->selected_pair.remote->state = ICE_CANDIDATE_STATE_SUCCEEDED;
+
+  }
+  else {
+
+    char test[64];
+    sprintf(test, "test\n");
+    udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].addr, test, strlen(test));
+  }
+
+  agent_recv(agent);
+#if 0
+  for (i = 0; i < agent->local_candidates_count; i++) {
+
+    for (j = 0; j < agent->remote_candidates_count; j++) {
+
+      priority = agent->local_candidates[i].priority + agent->remote_candidates[j].priority;
+
+      LOGD("priority: %lu", priority);
+    }
+  }
+#endif
+}
+
+void *agent_thread(void *arg) {
+#if 0
   Agent *agent = (Agent *)arg;
 
   agent_recv(agent);
-
+#endif
   return NULL;
 }
 

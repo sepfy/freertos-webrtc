@@ -9,6 +9,16 @@
 #define ICE_UFRAG_LENGTH 4
 #define ICE_UPWD_LENGTH 22
 
+typedef enum IceCandidateState {
+
+  ICE_CANDIDATE_STATE_FROZEN,
+  ICE_CANDIDATE_STATE_WAITING,
+  ICE_CANDIDATE_STATE_INPROGRESS,
+  ICE_CANDIDATE_STATE_SUCCEEDED,
+  ICE_CANDIDATE_STATE_FAILED,
+
+} IceCandidateState;
+
 typedef enum IceCandidateType {
 
   ICE_CANDIDATE_TYPE_HOST,
@@ -30,9 +40,22 @@ struct IceCandidate {
 
   IceCandidateType type;
 
+  IceCandidateState state;
+
   Address addr;
 
   Address raddr;
+
+};
+
+typedef struct IceCandidatePair IceCandidatePair;
+
+struct IceCandidatePair {
+
+  IceCandidate *local;
+
+  IceCandidate *remote;
+
 };
 
 void ice_candidate_create(IceCandidate *ice_candidate, IceCandidateType type, Address *addr);

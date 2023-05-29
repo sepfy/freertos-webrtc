@@ -33,6 +33,27 @@ int dtls_srtp_udp_recv(void *ctx, unsigned char *buf, size_t len) {
   return ret;
 }
 
+static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf) {
+
+  int i;
+  unsigned char digest[32];
+
+  mbedtls_sha256_context sha256_ctx;
+  mbedtls_sha256_init(&sha256_ctx);
+  mbedtls_sha256_starts(&sha256_ctx, 0);
+  mbedtls_sha256_update(&sha256_ctx, crt->raw.p, crt->raw.len);
+  mbedtls_sha256_finish(&sha256_ctx, (unsigned char *) digest);
+  mbedtls_sha256_free(&sha256_ctx);
+
+  for(i = 0; i < 32; i++) {
+
+    snprintf(buf, 4, "%.2X:", digest[i]);
+    buf += 3;
+  }
+
+  *(--buf) = '\0';
+}
+
 // Do not verify CA
 static int dtls_srtp_cert_verify(void *data, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
 
@@ -148,6 +169,10 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, UdpSocket *udp_socket, DtlsSrtpRole role
      MBEDTLS_SSL_PRESET_DEFAULT);
   }
 
+  dtls_srtp_x509_digest(&dtls_srtp->cert, dtls_srtp->local_fingerprint);
+
+  LOGD("local fingerprint: %s", dtls_srtp->local_fingerprint);
+
   mbedtls_ssl_conf_dtls_srtp_protection_profiles(&dtls_srtp->conf, default_profiles);
 
   mbedtls_ssl_conf_srtp_mki_value_supported(&dtls_srtp->conf, MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED);
@@ -160,27 +185,6 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, UdpSocket *udp_socket, DtlsSrtpRole role
   }
 
   return 0;
-}
-
-static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf) {
-
-  int i;
-  unsigned char digest[32];
-
-  mbedtls_sha256_context sha256_ctx;
-  mbedtls_sha256_init(&sha256_ctx);
-  mbedtls_sha256_starts(&sha256_ctx, 0);
-  mbedtls_sha256_update(&sha256_ctx, crt->raw.p, crt->raw.len);
-  mbedtls_sha256_finish(&sha256_ctx, (unsigned char *) digest);
-  mbedtls_sha256_free(&sha256_ctx);
-
-  for(i = 0; i < 32; i++) {
-
-    snprintf(buf, 4, "%.2X:", digest[i]);
-    buf += 3;
-  }
-
-  *(--buf) = '\0';
 }
 
 static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type secret_type,
@@ -382,10 +386,6 @@ int dtls_srtp_handshake(DtlsSrtp *dtls_srtp, Address *addr) {
     ret = dtls_srtp_handshake_client(dtls_srtp);
 
   }
-
-  dtls_srtp_x509_digest(&dtls_srtp->cert, dtls_srtp->local_fingerprint);
-
-  LOGD("local fingerprint: %s", dtls_srtp->local_fingerprint);
 
   if ((remote_crt = mbedtls_ssl_get_peer_cert(&dtls_srtp->ssl)) != NULL) {
 

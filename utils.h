@@ -46,6 +46,7 @@
 #endif
 
 void utils_random_string(char *s, const int len);
+void utils_get_sha1(const char *input, size_t input_len, const char *key, unsigned char *output);
 
 #endif // UTILS_H_
 

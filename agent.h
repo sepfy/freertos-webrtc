@@ -19,13 +19,28 @@
 #define AGENT_MAX_DESCRIPTION 40960
 #define AGENT_MAX_CANDIDATES 10
 
+
+typedef enum AgentState {
+
+  AGENT_STATE_NEW = 0,
+  AGENT_STATE_GATHERING,
+  AGENT_STATE_READY,
+  AGENT_STATE_FINISHED,
+  AGENT_STATE_CONNECTED,
+  AGENT_STATE_FAILED
+
+} AgentState;
+
+
 typedef struct Agent Agent;
 
 struct Agent {
 
-  char *ice_ufrag;
+  char remote_ufrag[ICE_UFRAG_LENGTH + 1];
+  char remote_upwd[ICE_UPWD_LENGTH + 1];
 
-  char *ice_upwd;
+  char local_ufrag[ICE_UFRAG_LENGTH + 1];
+  char local_upwd[ICE_UPWD_LENGTH + 1];
 
   IceCandidate local_candidates[AGENT_MAX_CANDIDATES];
 
@@ -36,7 +51,16 @@ struct Agent {
   int remote_candidates_count;
 
   UdpSocket udp_socket;
-  
+
+  int controlled;
+
+  AgentState state;
+
+  IceCandidatePair selected_pair;
+
+  int use_candidate;
+
+  uint32_t transaction_id[3];
 };
 
 void agent_gather_candidates(Agent *agent);
@@ -50,4 +74,7 @@ void agent_recv(Agent *agent);
 void agent_set_remote_description(Agent *agent, char *description);
 
 void *agent_thread(void *arg);
+
+void agent_select_candidate_pair(Agent *agent);
+
 

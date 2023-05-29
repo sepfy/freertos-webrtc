@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "mbedtls/md.h"
+
 #include "utils.h"
 
 void utils_random_string(char *s, const int len) {
@@ -20,4 +22,17 @@ void utils_random_string(char *s, const int len) {
   }
 
   s[len] = '\0';
+}
+
+void utils_get_sha1(const char *input, size_t input_len, const char *key, unsigned char *output) {
+
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA1;
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
+  mbedtls_md_hmac_starts(&ctx, (const unsigned char *) key, strlen(key));
+  mbedtls_md_hmac_update(&ctx, (const unsigned char *) input, input_len);
+  mbedtls_md_hmac_finish(&ctx, output);
+  mbedtls_md_free(&ctx);
+
 }
